@@ -36,8 +36,8 @@ float[][] presetTheta = new float[32][4];
 
 float j0kp = 8.0;
 float j1kp = 1.0;
-float j2kp = 3.0;
-float j3kp = 8.0;
+float j2kp = 1.0;
+float j3kp = 50.0;
 float lastj0output = 0.0;
 
 float globalToolAngle = 0.0;
@@ -107,6 +107,8 @@ void draw() {
     if (setPointReached) {
       println("Driving to setpoint " + nextSequencePosition);
       arrayCopy(presetTheta[nextSequencePosition] , rsTheta);
+      // Prepare j0 for new acceleration
+      lastj0output = 0.0;
       nextSequencePosition++;
       if (nextSequencePosition > (presetCount-1)) nextSequencePosition = 0; 
       setPointReached = false;
@@ -179,9 +181,10 @@ void driveJoints() {
     if (jointSpeed[i] < 1.0) jointSpeed[i] = 1.0;
   }
   
+  //Limit j1 speed
   if (jointSpeed[1] > j1maxSpeed) {
     for (int i = 0; i < 4; i++) {
-      jointSpeed[i] = (j1maxSpeed/jointSpeed[1])*jointSpeed[i];
+      jointSpeed[i] *= (jointSpeed[1]/j1maxSpeed);
       if (jointSpeed[i] < 1.0) jointSpeed[i] = 1.0;
     }
   }
@@ -199,7 +202,7 @@ void driveJoints() {
   
   // Accelerate robot base
   if (abs(lastj0output) < abs(j0output)) {
-    j0output = j0output*0.04 + lastj0output*0.96;
+    j0output = j0output*0.25 + lastj0output*0.75;
     lastj0output = j0output;
   }
   
@@ -212,7 +215,7 @@ void driveJoints() {
   //println("Commanding robot: A" + (int)(j0output*100) + " B" + (int)(j1output*100) + " C0" + " D0" + "\n");
   serialPort.write("A"+ (int)(j0output*100) + " B" + (int)(j1output*100) + " C" + (int)(j2output*100) + " D" + (int)(j3output*100) + "\n");
   
-  if (maxErr < 0.6) {
+  if (maxErr < 0.8) {
     println("Set point reached");
     setPointReached = true;
   }
@@ -411,6 +414,7 @@ public void connectSerial(boolean theFlag) {
     println("Connection established");
     connectedToRobot = true;
   } else {
+    enableMotors(false);
     println("Disconnected from robot");
     serialPort.stop();
     serialPort = null;
@@ -483,7 +487,7 @@ void serialEvent(Serial serialPort) {
   if (connectedToRobot) {
     if (inString.indexOf("INFO") != -1) {
       // Getting and printing robot information directly
-      println(inString);
+      //print(inString);
     } else if (inString.indexOf("ERR") != -1) {
       // Robot error! 
       println(inString);
