@@ -26,13 +26,13 @@
 #define j2scaler 15.0/143.0
 #define j3scaler 1
 
-#define j1VelocityKp 3
-#define j1VelocityKi 18
-#define j1VelocityKd 0.001
+#define j1VelocityKp 0.5
+#define j1VelocityKi 20
+#define j1VelocityKd 0.000001
 
-#define j2VelocityKp 0.5
-#define j2VelocityKi 4
-#define j2VelocityKd 0.00005
+#define j2VelocityKp 1
+#define j2VelocityKi 8
+#define j2VelocityKd 0.01
 
 #define j3VelocityKp 1
 
@@ -48,15 +48,17 @@ float j3sp = 0.0;
 // Positions are in quadrature tics
 volatile int j1pos = 0;
 volatile int j2pos = 0;
-volatile boolean j1forward = true;
-volatile boolean j2forward = true;
+volatile boolean j1fwtick = true;
+volatile boolean j2fwtick = true;
 volatile unsigned long lastj1tick = 0;
 volatile unsigned long j1ticktime = 100000000;
 volatile unsigned long lastj2tick = 0;
 volatile unsigned long j2ticktime = 100000000;
+volatile int j1fwcount = 0;
+volatile int j2fwcount = 0;
 
-boolean lastj1forward = true;
-boolean lastj2forward = true;
+//boolean j1forward = true;
+//boolean j2forward = true;
 float j3pos = 90.0;
 int lastj3pos = 0;
 // Velocity is in deg/s
@@ -88,8 +90,8 @@ void setup() {
   pinMode(j1drive1Pin, OUTPUT);
   pinMode(j1qaPin, INPUT_PULLUP); //Enable internal pull up for HP HEDS-5600 encoder
   pinMode(j1qbPin, INPUT_PULLUP);
-  pinMode(j2qaPin, INPUT);
-  pinMode(j2qbPin, INPUT);
+  pinMode(j2qaPin, INPUT_PULLUP);
+  pinMode(j2qbPin, INPUT_PULLUP);
   pinMode(j3enablePin, OUTPUT);
   pinMode(j3drivePin, OUTPUT);
   pinMode(teensyLEDPin, OUTPUT);      // LED to show Teensy is alive
@@ -171,7 +173,7 @@ void loop() {
       j1vel = abs(j1vel);
       j1vel = 0.15*j1vel + 0.85*((j1scaler/128) / (((double)j1ticktimeEst)/1000000.0));
     } else j1vel = (j1scaler/128) / (((double)j1ticktime)/1000000.0);
-
+    
     if (micros() > lastj2tick + 200000) {
       // Pulse read timeout, velocity zero
       j2vel = 0.0;
@@ -179,25 +181,26 @@ void loop() {
       // Going slower than last tick period, extrapolate time and thus speed
       double j2ticktimeEst = (micros()-lastj2tick);
       j2vel = abs(j2vel);
-      j2vel = 0.15*j2vel + 0.85*((j2scaler) / (((double)j2ticktimeEst)/1000000.0));
-    } else j2vel = (j2scaler) / (((double)j2ticktime)/1000000.0);
+      j2vel = 0.15*j2vel + 0.85*((j2scaler/2) / (((double)j2ticktimeEst)/1000000.0));
+    } else j2vel = (j2scaler/2) / (((double)j2ticktime)/1000000.0);
 
-    if (j1vel < 10.0) {
-      if (!j1forward) j1vel *= -1;
-      lastj1forward = j1forward;
-    } else if (!lastj1forward) j1vel *= -1;
-    
-    if (j2vel < 10.0) {
-      if (!j2forward) j2vel *= -1;
-      lastj2forward = j2forward;
-    } else if (!lastj2forward) j2vel *= -1;
-    
+    j1vel = constrain(j1vel, 0, 65);
+    j2vel = constrain(j2vel, 0, 65);
+    // If count = 0,1,2, probably going backward. 3,4,5 are forward.
+    if (j1fwcount < 4) j1vel *=-1;
+    if (j2fwcount < 4) j2vel *=-1;
+
     lastUpdateTime = micros();
     
     if (motorsEnabled) {
       driveJoint1Velocity(time);
       driveJoint2Velocity(time);
       driveJoint3Velocity(time);
+      
+      Serial.print("INFO: j1: ");
+      Serial.print(j1vel);
+      Serial.print(" j2: ");
+      Serial.println(j2vel);
     }
     
     Serial.print(int((joint0.currentPosition()*50/93)));
@@ -222,7 +225,7 @@ void driveJoint1Velocity(double time) {
   j1err = j1err/100.0;
   int j1effort = 0;
   j1errSum += (j1err * time);
-  j1errSum = constrain(j1errSum, -70,70);
+  j1errSum = constrain(j1errSum, -90,90);
   double dErr = (j1err - j1lastErr) / time;
   dErr = constrain(dErr, -50, 50);
   
@@ -250,9 +253,9 @@ void driveJoint2Velocity(double time) {
   double dErr = (j2err - j2lastErr) / time;
   dErr = constrain(dErr, -50, 50);
   
-  if ((j2sp < 5.0) && (j2err < 5.0))
-    j2effort = constrain(j2err*j2VelocityKp + j2errSum*j2VelocityKi + dErr*j2VelocityKd, -127, 127);  
-  else j2effort = constrain(j2err*j2VelocityKp + j2errSum*j2VelocityKi*2 + dErr*j2VelocityKd, -127, 127);  
+ // if ((j2sp < 5.0) && (j2err < 5.0))
+  j2effort = constrain(j2err*j2VelocityKp + j2errSum*j2VelocityKi + dErr*j2VelocityKd, -127, 127);  
+ // else j2effort = constrain(j2err*j2VelocityKp + j2errSum*j2VelocityKi*2 + dErr*j2VelocityKd, -127, 127);  
   analogWrite(j2drive0Pin, 127+j2effort);
   analogWrite(j2drive1Pin, 127-j2effort);
 }
